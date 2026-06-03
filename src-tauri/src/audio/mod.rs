@@ -1,15 +1,32 @@
-pub mod microphone;
 pub mod resampler;
+
+#[cfg(not(target_os = "linux"))]
+pub mod microphone;
+
+#[cfg(target_os = "linux")]
+pub mod microphone_linux;
 
 #[cfg(target_os = "macos")]
 pub mod system_audio;
+
+#[cfg(target_os = "linux")]
+pub mod system_audio_linux;
 
 #[cfg(target_os = "windows")]
 pub mod wasapi;
 
 // Re-export SystemAudioCapture from the correct platform module
+#[cfg(not(target_os = "linux"))]
+pub use microphone::MicCapture;
+
+#[cfg(target_os = "linux")]
+pub use microphone_linux::MicCapture;
+
 #[cfg(target_os = "macos")]
 pub use system_audio::SystemAudioCapture;
+
+#[cfg(target_os = "linux")]
+pub use system_audio_linux::SystemAudioCapture;
 
 #[cfg(target_os = "windows")]
 pub use wasapi::SystemAudioCapture;

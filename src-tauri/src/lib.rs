@@ -2,8 +2,7 @@ mod audio;
 mod commands;
 mod settings;
 
-use audio::microphone::MicCapture;
-use audio::SystemAudioCapture;
+use audio::{MicCapture, SystemAudioCapture};
 use commands::audio::AudioState;
 use commands::local_pipeline::LocalPipelineState;
 use commands::openai_realtime::OpenAiState;

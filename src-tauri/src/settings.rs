@@ -43,6 +43,9 @@ pub struct Settings {
     pub max_lines: u32,
     /// Whether to show original text alongside translation
     pub show_original: bool,
+    /// Transcript view mode: "single" | "dual"
+    #[serde(default = "default_view_mode")]
+    pub view_mode: String,
     /// Translation mode: "soniox" | "local" | "openai"
     pub translation_mode: String,
     /// Optional custom context for better transcription
@@ -88,6 +91,7 @@ impl Default for Settings {
             font_size: 16,
             max_lines: 5,
             show_original: true,
+            view_mode: default_view_mode(),
             translation_mode: "soniox".to_string(),
             custom_context: None,
             elevenlabs_api_key: String::new(),
@@ -104,6 +108,10 @@ impl Default for Settings {
             openai_audio_output: false,
         }
     }
+}
+
+fn default_view_mode() -> String {
+    "dual".to_string()
 }
 
 /// Get the settings file path

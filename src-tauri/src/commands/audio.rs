@@ -1,5 +1,4 @@
-use crate::audio::microphone::MicCapture;
-use crate::audio::SystemAudioCapture;
+use crate::audio::{MicCapture, SystemAudioCapture};
 use serde::Serialize;
 use std::sync::mpsc;
 use std::sync::Mutex;

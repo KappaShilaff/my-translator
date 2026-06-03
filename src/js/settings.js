@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS = {
   font_size: 16,
   max_lines: 5,
   show_original: true,
+  view_mode: 'dual',
   translation_mode: 'soniox',
   custom_context: null,
   elevenlabs_api_key: '',

@@ -35,6 +35,7 @@ class App {
         this.ttsEnabled = false;  // TTS runtime toggle
         this.isPinned = true;     // Always-on-top state
         this.isCompact = false;   // Compact mode (hide control bar)
+        this.isLinux = false;
     }
 
     async init() {
@@ -104,10 +105,12 @@ class App {
             const arch = await invoke('get_platform_info');
             const info = JSON.parse(arch);
             this.isAppleSilicon = (info.os === 'macos' && info.arch === 'aarch64');
+            this.isLinux = info.os === 'linux';
         } catch {
             // Fallback: check via navigator
             this.isAppleSilicon = navigator.platform === 'MacIntel' &&
                 navigator.userAgent.includes('Mac OS X');
+            this.isLinux = navigator.userAgent.includes('Linux');
         }
 
         if (!this.isAppleSilicon) {
@@ -121,6 +124,14 @@ class App {
             if (settings.translation_mode === 'local') {
                 settings.translation_mode = 'soniox';
                 settingsManager.save(settings);
+            }
+        }
+
+        if (this.isLinux) {
+            const settings = settingsManager.get();
+            if (settings.audio_source !== 'system') {
+                settings.audio_source = 'system';
+                await settingsManager.save(settings);
             }
         }
     }
@@ -681,9 +692,10 @@ class App {
         if (delayValue) delayValue.textContent = `${(endpointDelay / 1000).toFixed(1)}s`;
 
         // Audio source radio
-        const radioValue = s.audio_source || 'system';
+        const radioValue = this.isLinux ? 'system' : (s.audio_source || 'system');
         const radio = document.querySelector(`input[name="audio-source"][value="${radioValue}"]`);
         if (radio) radio.checked = true;
+        this._applyAudioSourceSupport();
 
         // Display
         const opacityPercent = Math.round((s.overlay_opacity || 0.85) * 100);
@@ -844,7 +856,10 @@ class App {
                 maxLines: settings.max_lines || 5,
                 showOriginal: settings.show_original !== false,
                 fontSize: settings.font_size || 16,
+                viewMode: settings.view_mode || 'dual',
             });
+            const viewBtn = document.getElementById('btn-view-mode');
+            if (viewBtn) viewBtn.classList.toggle('active', (settings.view_mode || 'dual') === 'dual');
         }
 
         // Update current source button states
@@ -1039,6 +1054,14 @@ class App {
     // ─── Source Control ────────────────────────────────────
 
     _setSource(source) {
+        if (this.isLinux && source !== 'system') {
+            settingsManager.save({ audio_source: 'system' });
+            this.currentSource = 'system';
+            this._updateSourceButtons();
+            this._showToast('Linux build captures system audio only', 'info');
+            return;
+        }
+
         const wasRunning = this.isRunning;
         const labels = { system: 'System Audio', microphone: 'Microphone', both: 'System + Mic' };
         const label = labels[source] || source;
@@ -1066,6 +1089,33 @@ class App {
             this.currentSource === 'microphone');
         document.getElementById('btn-source-both').classList.toggle('active',
             this.currentSource === 'both');
+        this._applyAudioSourceSupport();
+    }
+
+    _applyAudioSourceSupport() {
+        if (!this.isLinux) return;
+
+        this.currentSource = 'system';
+        const micBtn = document.getElementById('btn-source-mic');
+        const bothBtn = document.getElementById('btn-source-both');
+        for (const btn of [micBtn, bothBtn]) {
+            if (!btn) continue;
+            btn.disabled = true;
+            btn.classList.add('locked');
+            btn.classList.remove('active');
+            btn.title = 'Disabled on Linux system-audio-only build';
+        }
+
+        const systemBtn = document.getElementById('btn-source-system');
+        if (systemBtn) {
+            systemBtn.disabled = false;
+            systemBtn.classList.add('active');
+        }
+
+        document.querySelectorAll('input[name="audio-source"]').forEach((input) => {
+            input.disabled = input.value !== 'system';
+            input.checked = input.value === 'system';
+        });
     }
 
     // ─── Engine picker (Standard vs OpenAI) ──────────────────
@@ -1228,13 +1278,15 @@ class App {
         const btnOpenAiAudio = document.getElementById('btn-openai-audio');
         if (btnOpenAiAudio) btnOpenAiAudio.style.display = 'none';
 
-        // All engines now support any audio source (system / mic / both).
+        // All engines now support any audio source (system / mic / both),
+        // except the Linux build in this fork, which is system-audio only.
         const btnSourceMic = document.getElementById('btn-source-mic');
-        if (btnSourceMic) {
+        if (btnSourceMic && !this.isLinux) {
             btnSourceMic.disabled = false;
             btnSourceMic.classList.remove('locked');
             btnSourceMic.title = 'Microphone (⌘2)';
         }
+        this._applyAudioSourceSupport();
 
         // Restrict target language list to 13 OpenAI-supported in openai mode.
         // Qwen LiveTranslate Flash has its own 60-language list (mirrors mobile
@@ -2189,6 +2241,7 @@ class App {
         const isDual = this.transcriptUI.viewMode === 'dual';
         const newMode = isDual ? 'single' : 'dual';
         this.transcriptUI.configure({ viewMode: newMode });
+        settingsManager.save({ view_mode: newMode });
         const btn = document.getElementById('btn-view-mode');
         if (btn) btn.classList.toggle('active', newMode === 'dual');
     }
