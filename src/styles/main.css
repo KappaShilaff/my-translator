@@ -436,6 +436,19 @@ body {
   color: var(--success);
 }
 
+.web-chat-link-btn {
+  -webkit-app-region: no-drag;
+}
+
+.web-chat-link-btn:not(.enabled) {
+  opacity: 0.55;
+}
+
+.web-chat-link-btn.active {
+  background: rgba(56, 189, 248, 0.14);
+  color: #38bdf8;
+}
+
 /* OpenAI mode locks source to mic — show it active but dimmed/disabled. */
 .source-btn.locked {
   opacity: 0.55;

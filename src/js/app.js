@@ -308,6 +308,9 @@ class App {
         document.getElementById('btn-speaker-only')?.addEventListener('click', () => {
             this._toggleSpeakerOnlyOutput();
         });
+        document.getElementById('btn-web-chat-link')?.addEventListener('click', () => {
+            this._createAndCopyWebChatRoomFromSettings();
+        });
 
         // Clear button — clears display only (auto-save happens on stop)
         document.getElementById('btn-clear').addEventListener('click', async () => {
@@ -790,6 +793,7 @@ class App {
         if (webChatKey) webChatKey.value = s.web_chat_api_key || '';
         const webChatShare = document.getElementById('input-web-chat-share-url');
         if (webChatShare) webChatShare.value = this.webChatShareUrl || '';
+        this._updateWebChatLinkButton(s);
 
         // TTS provider
         const providerSelect = document.getElementById('select-tts-provider');
@@ -897,6 +901,36 @@ class App {
         }
     }
 
+    async _createAndCopyWebChatRoomFromSettings() {
+        const settings = settingsManager.get();
+        if (!settings.web_chat_enabled) {
+            this._showToast('Enable Web Chat in settings first', 'info');
+            return;
+        }
+
+        try {
+            const room = await webChatPublisher.ensureSession({
+                enabled: true,
+                apiUrl: settings.web_chat_api_url,
+                apiKey: settings.web_chat_api_key,
+            });
+            const shareUrl = room?.share_url || webChatPublisher.shareUrl || this.webChatShareUrl;
+            this._setWebChatShareUrl(shareUrl);
+            if (!shareUrl) throw new Error('Web Chat did not return a share link');
+
+            await navigator.clipboard.writeText(shareUrl);
+            if (this.isRunning) {
+                await this._startMicOnlyTranslationPipeline(settings);
+            }
+            this._showToast('Web Chat link copied', 'success');
+            this._updateWebChatLinkButton(settings);
+        } catch (err) {
+            console.error('[WebChat] create/copy room failed:', err);
+            this._showToast(`Web Chat: ${err.message || err}`, 'error');
+            this._updateWebChatLinkButton(settings);
+        }
+    }
+
     async _copyWebChatShareUrl() {
         const value = document.getElementById('input-web-chat-share-url')?.value || this.webChatShareUrl;
         if (!value) {
@@ -912,6 +946,19 @@ class App {
         this.webChatShareUrl = url || '';
         const input = document.getElementById('input-web-chat-share-url');
         if (input) input.value = this.webChatShareUrl;
+        this._updateWebChatLinkButton();
+    }
+
+    _updateWebChatLinkButton(settings = settingsManager.get()) {
+        const btn = document.getElementById('btn-web-chat-link');
+        if (!btn) return;
+
+        const enabled = Boolean(settings.web_chat_enabled);
+        btn.classList.toggle('enabled', enabled);
+        btn.classList.toggle('active', enabled && Boolean(this.webChatShareUrl));
+        btn.title = enabled
+            ? (this.webChatShareUrl ? 'Copy Web Chat link' : 'Create Web Chat room and copy link')
+            : 'Enable Web Chat in settings first';
     }
 
     async _startWebChatIfEnabled(settings) {
@@ -920,6 +967,12 @@ class App {
         if (!settings.web_chat_enabled) {
             this._setWebChatShareUrl('');
             webChatPublisher.reset();
+            try {
+                await this._startMicOnlyTranslationPipeline(settings);
+            } catch (err) {
+                console.error('[Mic pipeline] start failed:', err);
+                this._showToast(`Mic stream disabled: ${err.message || err}`, 'error');
+            }
             return;
         }
 
@@ -933,7 +986,7 @@ class App {
             if (this.webChatShareUrl) {
                 this._showToast(`Web Chat live: ${this.webChatShareUrl}`, 'success');
             }
-            await this._startWebChatMicOnlyTranslation(settings);
+            await this._startMicOnlyTranslationPipeline(settings);
         } catch (err) {
             console.error('[WebChat] start failed:', err);
             this._showToast(`Web Chat disabled: ${err.message || err}`, 'error');
@@ -962,12 +1015,20 @@ class App {
             });
     }
 
-    async _startWebChatMicOnlyTranslation(settings) {
+    _shouldShowMicInLocalGui() {
+        return this.currentSource === 'both' && !this.speakerOnlyOutput;
+    }
+
+    async _startMicOnlyTranslationPipeline(settings) {
+        const needsMicPipeline = settings.web_chat_enabled ||
+            (this.translationMode === 'soniox' && this.currentSource === 'both' && !this.speakerOnlyOutput);
+        if (!needsMicPipeline) return;
+
         if (!settings.soniox_api_key) {
-            throw new Error('Soniox API key is required for mic-only Web Chat');
+            throw new Error('Soniox API key is required for microphone translation');
         }
 
-        await this._stopWebChatMicOnlyTranslation();
+        await this._stopMicOnlyTranslationPipeline();
 
         this._webChatOriginalQueue = [];
         this.webChatSonioxClient = new SonioxClient();
@@ -976,10 +1037,17 @@ class App {
         };
         this.webChatSonioxClient.onTranslation = (text) => {
             const source = this._webChatOriginalQueue.shift() || '';
-            this._publishWebChatFinal({ source, translation: text });
+            if (settings.web_chat_enabled) {
+                this._publishWebChatFinal({ source, translation: text });
+            }
+            if (this._shouldShowMicInLocalGui()) {
+                if (source) this.transcriptUI.addOriginal(source, null, null);
+                this.transcriptUI.addTranslation(text);
+                sessionStore.addSegment(source || '', text || '');
+            }
         };
         this.webChatSonioxClient.onProvisional = (text, speaker, language) => {
-            if (text) {
+            if (text && settings.web_chat_enabled) {
                 this._publishWebChatProvisional({ source: text, speaker, language });
             }
         };
@@ -1006,10 +1074,12 @@ class App {
         };
 
         await invoke('start_web_chat_mic_capture', { channel });
-        await webChatPublisher.publishStatus('live');
+        if (settings.web_chat_enabled) {
+            await webChatPublisher.publishStatus('live');
+        }
     }
 
-    async _stopWebChatMicOnlyTranslation() {
+    async _stopMicOnlyTranslationPipeline() {
         try {
             await invoke('stop_web_chat_mic_capture');
         } catch (err) {
@@ -1256,26 +1326,28 @@ class App {
         }
     }
 
-    _toggleSpeakerOnlyOutput() {
+    async _toggleSpeakerOnlyOutput() {
         const next = !this.speakerOnlyOutput;
-        const wasRunning = this.isRunning;
 
         settingsManager.save({ speaker_only_output: next });
         this.speakerOnlyOutput = next;
         this._updateSourceButtons();
 
-        const label = next ? 'Speaker-only output enabled' : 'Speaker-only output disabled';
-        if (wasRunning) {
-            this.stop().then(() => {
-                this._showToast(label, 'success');
-                this.start();
-            });
-        } else {
-            this._showToast(label, 'success');
+        if (this.isRunning) {
+            const settings = settingsManager.get();
+            if (!next && this.currentSource === 'both' && !this.webChatSonioxClient) {
+                await this._startMicOnlyTranslationPipeline(settings);
+            } else if (next && !settings.web_chat_enabled) {
+                await this._stopMicOnlyTranslationPipeline();
+            }
         }
+
+        const label = next ? 'Microphone hidden in local GUI' : 'Microphone visible in local GUI';
+        this._showToast(label, 'success');
     }
 
     _effectiveCaptureSource() {
+        if (this.currentSource === 'both') return 'system';
         return this.speakerOnlyOutput ? 'system' : this.currentSource;
     }
 
@@ -1290,8 +1362,8 @@ class App {
         if (speakerOnlyBtn) {
             speakerOnlyBtn.classList.toggle('active', this.speakerOnlyOutput);
             speakerOnlyBtn.title = this.speakerOnlyOutput
-                ? 'Speaker-only enabled — microphone speech is hidden'
-                : 'Hide microphone speech — translate speakers only';
+                ? 'Microphone text hidden in local window'
+                : 'Hide microphone text in local window';
         }
         this._applyAudioSourceSupport();
     }
@@ -2268,7 +2340,7 @@ class App {
         }
 
         await webChatPublisher.publishStatus('ended');
-        await this._stopWebChatMicOnlyTranslation();
+        await this._stopMicOnlyTranslationPipeline();
         webChatPublisher.reset();
 
         // Keep transcript visible — don't clear
