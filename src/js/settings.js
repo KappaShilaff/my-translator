@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS = {
   source_language: 'auto',
   target_language: 'vi',
   audio_source: 'system',
+  speaker_only_output: false,
   overlay_opacity: 0.85,
   font_size: 16,
   max_lines: 5,

@@ -23,6 +23,7 @@ class App {
         this.isRunning = false;
         this.isStarting = false; // Guard against re-entry
         this.currentSource = 'system'; // 'system' | 'microphone' | 'both'
+        this.speakerOnlyOutput = false;
         this.translationMode = 'soniox'; // 'soniox' | 'local'
         this.transcriptUI = null;
         this.appWindow = getCurrentWindow();
@@ -301,6 +302,9 @@ class App {
         });
         document.getElementById('btn-source-both').addEventListener('click', () => {
             this._setSource('both');
+        });
+        document.getElementById('btn-speaker-only')?.addEventListener('click', () => {
+            this._toggleSpeakerOnlyOutput();
         });
 
         // Clear button — clears display only (auto-save happens on stop)
@@ -965,6 +969,7 @@ class App {
 
         // Update current source button states
         this.currentSource = settings.audio_source || 'system';
+        this.speakerOnlyOutput = Boolean(settings.speaker_only_output);
         this._updateSourceButtons();
 
         // TTS is always OFF on app start — user must toggle on each session
@@ -1175,6 +1180,29 @@ class App {
         }
     }
 
+    _toggleSpeakerOnlyOutput() {
+        const next = !this.speakerOnlyOutput;
+        const wasRunning = this.isRunning;
+
+        settingsManager.save({ speaker_only_output: next });
+        this.speakerOnlyOutput = next;
+        this._updateSourceButtons();
+
+        const label = next ? 'Speaker-only output enabled' : 'Speaker-only output disabled';
+        if (wasRunning) {
+            this.stop().then(() => {
+                this._showToast(label, 'success');
+                this.start();
+            });
+        } else {
+            this._showToast(label, 'success');
+        }
+    }
+
+    _effectiveCaptureSource() {
+        return this.speakerOnlyOutput ? 'system' : this.currentSource;
+    }
+
     _updateSourceButtons() {
         document.getElementById('btn-source-system').classList.toggle('active',
             this.currentSource === 'system');
@@ -1182,6 +1210,13 @@ class App {
             this.currentSource === 'microphone');
         document.getElementById('btn-source-both').classList.toggle('active',
             this.currentSource === 'both');
+        const speakerOnlyBtn = document.getElementById('btn-speaker-only');
+        if (speakerOnlyBtn) {
+            speakerOnlyBtn.classList.toggle('active', this.speakerOnlyOutput);
+            speakerOnlyBtn.title = this.speakerOnlyOutput
+                ? 'Speaker-only enabled — microphone speech is hidden'
+                : 'Hide microphone speech — translate speakers only';
+        }
         this._applyAudioSourceSupport();
     }
 
@@ -1715,9 +1750,10 @@ class App {
                 const bytes = new Uint8Array(pcmData);
                 this.openAiClient.sendAudio(bytes.buffer);
             };
-            console.log('[OpenAI] Starting audio capture, source:', this.currentSource);
+            const captureSource = this._effectiveCaptureSource();
+            console.log('[OpenAI] Starting audio capture, source:', captureSource, 'selected:', this.currentSource);
             await invoke('start_capture', {
-                source: this.currentSource,
+                source: captureSource,
                 channel,
             });
             console.log('[OpenAI] start_capture invoked OK');
@@ -1798,9 +1834,10 @@ class App {
                 const bytes = new Uint8Array(pcmData);
                 this.qwenClient.sendAudio(bytes.buffer);
             };
-            console.log('[Qwen] Starting audio capture, source:', this.currentSource);
+            const captureSource = this._effectiveCaptureSource();
+            console.log('[Qwen] Starting audio capture, source:', captureSource, 'selected:', this.currentSource);
             await invoke('start_capture', {
-                source: this.currentSource,
+                source: captureSource,
                 channel,
             });
             console.log('[Qwen] start_capture invoked OK');
@@ -1843,9 +1880,10 @@ class App {
                 sonioxClient.sendAudio(bytes.buffer);
             };
 
-            console.log('[App] Starting audio capture, source:', this.currentSource);
+            const captureSource = this._effectiveCaptureSource();
+            console.log('[App] Starting audio capture, source:', captureSource, 'selected:', this.currentSource);
             await invoke('start_capture', {
-                source: this.currentSource,
+                source: captureSource,
                 channel: channel,
             });
             console.log('[App] Audio capture started successfully');
@@ -1864,7 +1902,7 @@ class App {
         // Step 0: Check audio permission FIRST (before loading models)
         try {
             await invoke('start_capture', {
-                source: this.currentSource,
+                source: this._effectiveCaptureSource(),
                 channel: new window.__TAURI__.core.Channel(), // dummy channel for permission check
             });
             await invoke('stop_capture');
@@ -1953,7 +1991,7 @@ class App {
             };
 
             await invoke('start_capture', {
-                source: this.currentSource,
+                source: this._effectiveCaptureSource(),
                 channel: audioChannel,
             });
             console.log('[App] Audio capture started');

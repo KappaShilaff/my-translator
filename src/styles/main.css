@@ -427,6 +427,15 @@ body {
   color: var(--accent);
 }
 
+.speaker-only-btn {
+  -webkit-app-region: no-drag;
+}
+
+.speaker-only-btn.active {
+  background: rgba(74, 222, 128, 0.14);
+  color: var(--success);
+}
+
 /* OpenAI mode locks source to mic — show it active but dimmed/disabled. */
 .source-btn.locked {
   opacity: 0.55;

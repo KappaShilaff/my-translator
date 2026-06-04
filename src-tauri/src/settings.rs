@@ -35,6 +35,9 @@ pub struct Settings {
     pub target_language: String,
     /// Audio source: "system" | "microphone" | "both"
     pub audio_source: String,
+    /// When true, capture system audio only even if "both" is selected.
+    #[serde(default)]
+    pub speaker_only_output: bool,
     /// Overlay opacity: 0.0 - 1.0
     pub overlay_opacity: f64,
     /// Font size in px
@@ -96,6 +99,7 @@ impl Default for Settings {
             source_language: "auto".to_string(),
             target_language: "vi".to_string(),
             audio_source: "system".to_string(),
+            speaker_only_output: false,
             overlay_opacity: 0.85,
             font_size: 16,
             max_lines: 5,
