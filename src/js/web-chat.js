@@ -7,6 +7,8 @@ class WebChatPublisher {
         this.shareUrl = '';
         this.seq = 1;
         this.failed = false;
+        this.generation = 0;
+        this.pending = Promise.resolve(false);
     }
 
     configure({ enabled, apiUrl, apiKey }) {
@@ -21,6 +23,8 @@ class WebChatPublisher {
         this.shareUrl = '';
         this.seq = 1;
         this.failed = false;
+        this.generation += 1;
+        this.pending = Promise.resolve(false);
 
         if (!this.enabled) return null;
         if (!this.apiUrl) throw new Error('Web Chat API URL is required');
@@ -68,29 +72,47 @@ class WebChatPublisher {
     async publish(event) {
         if (!this.enabled || !this.roomId || this.failed) return false;
 
+        const generation = this.generation;
+        const apiUrl = this.apiUrl;
+        const apiKey = this.apiKey;
+        const roomId = this.roomId;
         const payload = {
             ...event,
             seq: event.seq || this.seq++,
             ts: event.ts || Date.now(),
         };
 
-        try {
-            const response = await fetch(`${this.apiUrl}/api/sessions/${this.roomId}/events`, {
-                method: 'POST',
-                headers: {
-                    'content-type': 'application/json',
-                    'x-api-key': this.apiKey,
-                },
-                body: JSON.stringify(payload),
-            });
+        const send = async () => {
+            if (
+                generation !== this.generation ||
+                !this.enabled ||
+                this.failed ||
+                this.roomId !== roomId
+            ) {
+                return false;
+            }
 
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return true;
-        } catch (err) {
-            this.failed = true;
-            console.error('[WebChat] publish failed:', err);
-            return false;
-        }
+            try {
+                const response = await fetch(`${apiUrl}/api/sessions/${roomId}/events`, {
+                    method: 'POST',
+                    headers: {
+                        'content-type': 'application/json',
+                        'x-api-key': apiKey,
+                    },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return true;
+            } catch (err) {
+                this.failed = true;
+                console.error('[WebChat] publish failed:', err);
+                return false;
+            }
+        };
+
+        this.pending = this.pending.catch(() => false).then(send);
+        return this.pending;
     }
 
     publishStatus(status) {
@@ -122,6 +144,8 @@ class WebChatPublisher {
         this.shareUrl = '';
         this.seq = 1;
         this.failed = false;
+        this.generation += 1;
+        this.pending = Promise.resolve(false);
     }
 }
 
