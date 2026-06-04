@@ -127,13 +127,6 @@ class App {
             }
         }
 
-        if (this.isLinux) {
-            const settings = settingsManager.get();
-            if (settings.audio_source !== 'system') {
-                settings.audio_source = 'system';
-                await settingsManager.save(settings);
-            }
-        }
     }
 
     // ─── Event Binding ──────────────────────────────────────
@@ -692,7 +685,7 @@ class App {
         if (delayValue) delayValue.textContent = `${(endpointDelay / 1000).toFixed(1)}s`;
 
         // Audio source radio
-        const radioValue = this.isLinux ? 'system' : (s.audio_source || 'system');
+        const radioValue = s.audio_source || 'system';
         const radio = document.querySelector(`input[name="audio-source"][value="${radioValue}"]`);
         if (radio) radio.checked = true;
         this._applyAudioSourceSupport();
@@ -1054,14 +1047,6 @@ class App {
     // ─── Source Control ────────────────────────────────────
 
     _setSource(source) {
-        if (this.isLinux && source !== 'system') {
-            settingsManager.save({ audio_source: 'system' });
-            this.currentSource = 'system';
-            this._updateSourceButtons();
-            this._showToast('Linux build captures system audio only', 'info');
-            return;
-        }
-
         const wasRunning = this.isRunning;
         const labels = { system: 'System Audio', microphone: 'Microphone', both: 'System + Mic' };
         const label = labels[source] || source;
@@ -1093,28 +1078,21 @@ class App {
     }
 
     _applyAudioSourceSupport() {
-        if (!this.isLinux) return;
-
-        this.currentSource = 'system';
         const micBtn = document.getElementById('btn-source-mic');
         const bothBtn = document.getElementById('btn-source-both');
         for (const btn of [micBtn, bothBtn]) {
             if (!btn) continue;
-            btn.disabled = true;
-            btn.classList.add('locked');
-            btn.classList.remove('active');
-            btn.title = 'Disabled on Linux system-audio-only build';
+            btn.disabled = false;
+            btn.classList.remove('locked');
         }
 
         const systemBtn = document.getElementById('btn-source-system');
         if (systemBtn) {
             systemBtn.disabled = false;
-            systemBtn.classList.add('active');
         }
 
         document.querySelectorAll('input[name="audio-source"]').forEach((input) => {
-            input.disabled = input.value !== 'system';
-            input.checked = input.value === 'system';
+            input.disabled = false;
         });
     }
 
@@ -1278,10 +1256,9 @@ class App {
         const btnOpenAiAudio = document.getElementById('btn-openai-audio');
         if (btnOpenAiAudio) btnOpenAiAudio.style.display = 'none';
 
-        // All engines now support any audio source (system / mic / both),
-        // except the Linux build in this fork, which is system-audio only.
+        // All engines now support any audio source (system / mic / both).
         const btnSourceMic = document.getElementById('btn-source-mic');
-        if (btnSourceMic && !this.isLinux) {
+        if (btnSourceMic) {
             btnSourceMic.disabled = false;
             btnSourceMic.classList.remove('locked');
             btnSourceMic.title = 'Microphone (⌘2)';

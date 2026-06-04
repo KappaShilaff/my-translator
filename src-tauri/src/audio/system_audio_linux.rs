@@ -3,11 +3,12 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
+use super::pipewire_linux;
 use super::TARGET_SAMPLE_RATE;
 
 /// System audio capture on Linux through PipeWire's monitor source.
 ///
-/// Fedora and other modern desktops expose each output sink as a monitor input
+/// Modern PipeWire desktops expose each output sink as a monitor input
 /// named `<sink>.monitor`. `pw-record` can capture that monitor and emit raw PCM
 /// directly. On some devices, targeting the monitor by name with mono channel
 /// negotiation links to the headset microphone instead, so this backend targets
@@ -34,7 +35,7 @@ impl SystemAudioCapture {
 
         self.cleanup_previous_child();
 
-        let target = default_monitor_target()?;
+        let target = pipewire_linux::default_monitor_target()?;
         println!("[LinuxSystemAudio] Capturing monitor target: {}", target);
 
         let mut child = Command::new("pw-record")
@@ -128,57 +129,6 @@ impl Default for SystemAudioCapture {
     }
 }
 
-fn default_monitor_target() -> Result<String, String> {
-    if let Some(default_sink) = command_stdout("pactl", &["get-default-sink"])? {
-        let sink = default_sink.trim();
-        if !sink.is_empty() {
-            let monitor_name = format!("{}.monitor", sink);
-            if let Some(serial) = monitor_serial(&monitor_name)? {
-                return Ok(serial);
-            }
-            return Ok(monitor_name);
-        }
-    }
-
-    let sources = command_stdout("pactl", &["list", "short", "sources"])?
-        .ok_or("pactl returned no sources".to_string())?;
-
-    sources
-        .lines()
-        .filter_map(|line| line.split_whitespace().nth(1))
-        .find(|name| name.ends_with(".monitor"))
-        .map(str::to_string)
-        .ok_or_else(|| {
-            "No PipeWire/Pulse monitor source found. Make sure an audio output device is available."
-                .to_string()
-        })
-}
-
-fn monitor_serial(monitor_name: &str) -> Result<Option<String>, String> {
-    let sources = command_stdout("pactl", &["list", "sources"])?
-        .ok_or("pactl returned no source details".to_string())?;
-
-    let mut in_target = false;
-    for line in sources.lines() {
-        let trimmed = line.trim();
-
-        if let Some(name) = trimmed.strip_prefix("Name: ") {
-            in_target = name == monitor_name;
-            continue;
-        }
-
-        if !in_target {
-            continue;
-        }
-
-        if let Some(serial) = trimmed.strip_prefix("object.serial = ") {
-            return Ok(Some(serial.trim_matches('"').to_string()));
-        }
-    }
-
-    Ok(None)
-}
-
 fn drain_stereo_s16le_to_mono(pending: &mut Vec<u8>) -> Vec<u8> {
     let frame_bytes = 4;
     let process_len = pending.len() / frame_bytes * frame_bytes;
@@ -196,19 +146,4 @@ fn drain_stereo_s16le_to_mono(pending: &mut Vec<u8>) -> Vec<u8> {
 
     pending.drain(..process_len);
     output
-}
-
-fn command_stdout(program: &str, args: &[&str]) -> Result<Option<String>, String> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
-        .map_err(|e| format!("Failed to run {}: {}", program, e))?;
-
-    if !output.status.success() {
-        return Ok(None);
-    }
-
-    String::from_utf8(output.stdout)
-        .map(Some)
-        .map_err(|e| format!("{} returned non-UTF8 output: {}", program, e))
 }

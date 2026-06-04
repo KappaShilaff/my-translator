@@ -1,13 +1,13 @@
 # My Translator: запуск, ключи, проверка
 
-Актуально для локального checkout `/home/plank/interview/my-translator`.
-Проверено 2026-06-01 на Fedora Linux.
+Актуально для локального checkout репозитория.
+Проверено на Linux с PipeWire/PulseAudio.
 
 ## Короткий вывод
 
-Проект изначально был рассчитан на macOS 13+ и Windows 10/11. В этом checkout добавлен Linux backend для system audio через PipeWire monitor source (`pw-record` + `pactl`).
+Проект изначально был рассчитан на macOS 13+ и Windows 10/11. В этом checkout добавлен Linux backend для system audio и microphone через PipeWire/PulseAudio (`pw-record` + `pactl`).
 
-На этой Fedora уже проверено:
+Проверенный базовый набор команд:
 
 ```bash
 npm install
@@ -20,17 +20,17 @@ npm run tauri -- dev
 
 - `npm install` прошел успешно, уязвимостей npm не найдено.
 - Tauri CLI установлен локально: `tauri-cli 2.10.1`.
-- `cargo check` и `npm run tauri -- dev` падают на системной зависимости Linux: нет `alsa.pc`, нужен пакет `alsa-lib-devel`.
-- Linux system audio backend добавлен, но для сборки и запуска нужны системные dev-пакеты ниже.
+- `cargo check` проходит.
+- Linux system audio и microphone backend добавлены, но для сборки и запуска всё равно нужны системные Tauri/WebKit dev-пакеты ниже.
 
-Для реального теста на Linux нужен PipeWire/Pulse monitor source. На этой машине `pw-record` с default speaker monitor уже проверен и выдает raw PCM bytes.
+Для реального теста на Linux нужны PipeWire/Pulse sources. `pw-record` должен открывать default speaker monitor для System Audio и default input source для Microphone.
 
 ## Как запускать из исходников
 
 Установка зависимостей:
 
 ```bash
-cd /home/plank/interview/my-translator
+cd my-translator
 npm install
 ```
 
@@ -188,7 +188,7 @@ Release page: https://github.com/phuc-nt/my-translator/releases/latest
 9. Включить Edge TTS и проверить озвучку.
 10. Открыть transcript через кнопку clipboard/list в UI и проверить, что session сохраняется.
 
-## Что сломалось на этой Fedora
+## Частые Linux build blockers
 
 Текущая ошибка:
 
@@ -205,9 +205,9 @@ pkg-config --modversion alsa
 pkg-config --modversion webkit2gtk-4.1
 ```
 
-Оба сейчас возвращают `Package ... not found`.
+Если dev-пакеты не установлены, эти команды возвращают `Package ... not found`.
 
-Для Linux build на Fedora обычно нужны Tauri/WebKit/audio dependencies. `alsa-lib-devel` больше не обязателен для Linux system-audio-only сборки, потому что Linux microphone/cpal отключен, но его можно поставить, если захочешь вернуть mic backend:
+Для Linux build обычно нужны Tauri/WebKit/audio dependencies. Например, для dnf-based дистрибутивов это выглядит так. `alsa-lib-devel` больше не обязателен, потому что Linux audio backend использует `pw-record`, а не `cpal`:
 
 ```bash
 sudo dnf install \

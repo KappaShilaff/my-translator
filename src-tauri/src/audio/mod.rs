@@ -6,6 +6,9 @@ pub mod microphone;
 #[cfg(target_os = "linux")]
 pub mod microphone_linux;
 
+#[cfg(target_os = "linux")]
+mod pipewire_linux;
+
 #[cfg(target_os = "macos")]
 pub mod system_audio;
 

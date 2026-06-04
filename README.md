@@ -139,7 +139,8 @@ Experimental offline mode using MLX + Whisper + Gemma — runs 100% on-device. J
 - **[Tauri 2](https://tauri.app/)** — Rust backend + WebView frontend
 - **[ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit)** — macOS system audio
 - **[WASAPI](https://learn.microsoft.com/en-us/windows/win32/coreaudio/wasapi)** — Windows system audio
-- **[cpal](https://github.com/RustAudio/cpal)** — Cross-platform microphone
+- **PipeWire/PulseAudio (`pw-record` + `pactl`)** — Linux system audio and microphone
+- **[cpal](https://github.com/RustAudio/cpal)** — macOS/Windows microphone
 - **[Soniox](https://soniox.com)** — Real-time STT + translation
 - **[OpenAI Realtime Translate](https://platform.openai.com/docs/guides/realtime)** — `gpt-realtime-translate` (text + native voice)
 - **[MLX](https://github.com/ml-explore/mlx)** — On-device Whisper + Gemma for offline mode
