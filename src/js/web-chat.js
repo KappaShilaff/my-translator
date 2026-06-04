@@ -41,6 +41,30 @@ class WebChatPublisher {
         return data;
     }
 
+    hasSessionFor(config) {
+        const apiUrl = (config.apiUrl || '').trim().replace(/\/+$/, '');
+        const apiKey = (config.apiKey || '').trim();
+        return Boolean(
+            config.enabled &&
+            this.enabled &&
+            this.roomId &&
+            this.apiUrl === apiUrl &&
+            this.apiKey === apiKey
+        );
+    }
+
+    async ensureSession(config) {
+        if (this.hasSessionFor(config)) {
+            this.failed = false;
+            return {
+                room_id: this.roomId,
+                share_url: this.shareUrl,
+            };
+        }
+
+        return this.createSession(config);
+    }
+
     async publish(event) {
         if (!this.enabled || !this.roomId || this.failed) return false;
 

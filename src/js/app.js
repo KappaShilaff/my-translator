@@ -898,13 +898,15 @@ class App {
 
     async _startWebChatIfEnabled(settings) {
         this._webChatWarned = false;
-        this._setWebChatShareUrl('');
-        webChatPublisher.reset();
 
-        if (!settings.web_chat_enabled) return;
+        if (!settings.web_chat_enabled) {
+            this._setWebChatShareUrl('');
+            webChatPublisher.reset();
+            return;
+        }
 
         try {
-            const room = await webChatPublisher.createSession({
+            const room = await webChatPublisher.ensureSession({
                 enabled: true,
                 apiUrl: settings.web_chat_api_url,
                 apiKey: settings.web_chat_api_key,
