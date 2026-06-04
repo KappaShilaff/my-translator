@@ -436,15 +436,15 @@ body {
   color: var(--success);
 }
 
-.web-chat-link-btn {
+.web-chat-btn {
   -webkit-app-region: no-drag;
 }
 
-.web-chat-link-btn:not(.enabled) {
+.web-chat-btn:not(.enabled) {
   opacity: 0.55;
 }
 
-.web-chat-link-btn.active {
+.web-chat-btn.active {
   background: rgba(56, 189, 248, 0.14);
   color: #38bdf8;
 }

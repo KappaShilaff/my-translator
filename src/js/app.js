@@ -308,8 +308,11 @@ class App {
         document.getElementById('btn-speaker-only')?.addEventListener('click', () => {
             this._toggleSpeakerOnlyOutput();
         });
-        document.getElementById('btn-web-chat-link')?.addEventListener('click', () => {
-            this._createAndCopyWebChatRoomFromSettings();
+        document.getElementById('btn-web-chat-create-toolbar')?.addEventListener('click', () => {
+            this._createWebChatRoomFromSettings();
+        });
+        document.getElementById('btn-web-chat-copy-toolbar')?.addEventListener('click', () => {
+            this._copyWebChatShareUrl();
         });
 
         // Clear button — clears display only (auto-save happens on stop)
@@ -793,7 +796,7 @@ class App {
         if (webChatKey) webChatKey.value = s.web_chat_api_key || '';
         const webChatShare = document.getElementById('input-web-chat-share-url');
         if (webChatShare) webChatShare.value = this.webChatShareUrl || '';
-        this._updateWebChatLinkButton(s);
+        this._updateWebChatToolbarButtons(s);
 
         // TTS provider
         const providerSelect = document.getElementById('select-tts-provider');
@@ -901,7 +904,7 @@ class App {
         }
     }
 
-    async _createAndCopyWebChatRoomFromSettings() {
+    async _createWebChatRoomFromSettings() {
         const settings = settingsManager.get();
         if (!settings.web_chat_enabled) {
             this._showToast('Enable Web Chat in settings first', 'info');
@@ -909,25 +912,24 @@ class App {
         }
 
         try {
-            const room = await webChatPublisher.ensureSession({
+            const room = await webChatPublisher.createSession({
                 enabled: true,
                 apiUrl: settings.web_chat_api_url,
                 apiKey: settings.web_chat_api_key,
             });
-            const shareUrl = room?.share_url || webChatPublisher.shareUrl || this.webChatShareUrl;
+            const shareUrl = room?.share_url || '';
             this._setWebChatShareUrl(shareUrl);
             if (!shareUrl) throw new Error('Web Chat did not return a share link');
 
-            await navigator.clipboard.writeText(shareUrl);
             if (this.isRunning) {
                 await this._startMicOnlyTranslationPipeline(settings);
             }
-            this._showToast('Web Chat link copied', 'success');
-            this._updateWebChatLinkButton(settings);
+            this._showToast('Web Chat room created', 'success');
+            this._updateWebChatToolbarButtons(settings);
         } catch (err) {
-            console.error('[WebChat] create/copy room failed:', err);
+            console.error('[WebChat] create room failed:', err);
             this._showToast(`Web Chat: ${err.message || err}`, 'error');
-            this._updateWebChatLinkButton(settings);
+            this._updateWebChatToolbarButtons(settings);
         }
     }
 
@@ -946,19 +948,24 @@ class App {
         this.webChatShareUrl = url || '';
         const input = document.getElementById('input-web-chat-share-url');
         if (input) input.value = this.webChatShareUrl;
-        this._updateWebChatLinkButton();
+        this._updateWebChatToolbarButtons();
     }
 
-    _updateWebChatLinkButton(settings = settingsManager.get()) {
-        const btn = document.getElementById('btn-web-chat-link');
-        if (!btn) return;
+    _updateWebChatToolbarButtons(settings = settingsManager.get()) {
+        const createBtn = document.getElementById('btn-web-chat-create-toolbar');
+        const copyBtn = document.getElementById('btn-web-chat-copy-toolbar');
 
         const enabled = Boolean(settings.web_chat_enabled);
-        btn.classList.toggle('enabled', enabled);
-        btn.classList.toggle('active', enabled && Boolean(this.webChatShareUrl));
-        btn.title = enabled
-            ? (this.webChatShareUrl ? 'Copy Web Chat link' : 'Create Web Chat room and copy link')
-            : 'Enable Web Chat in settings first';
+        if (createBtn) {
+            createBtn.classList.toggle('enabled', enabled);
+            createBtn.classList.toggle('active', enabled && Boolean(this.webChatShareUrl));
+            createBtn.title = enabled ? 'Create Web Chat room' : 'Enable Web Chat in settings first';
+        }
+        if (copyBtn) {
+            copyBtn.classList.toggle('enabled', enabled);
+            copyBtn.classList.toggle('active', enabled && Boolean(this.webChatShareUrl));
+            copyBtn.title = this.webChatShareUrl ? 'Copy Web Chat link' : 'Create Web Chat room first';
+        }
     }
 
     async _startWebChatIfEnabled(settings) {
