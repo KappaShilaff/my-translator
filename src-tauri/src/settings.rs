@@ -51,6 +51,21 @@ pub struct Settings {
     pub view_mode: String,
     /// Translation mode: "soniox" | "local" | "openai"
     pub translation_mode: String,
+    /// Translation type: "one_way" | "two_way"
+    #[serde(default = "default_translation_type")]
+    pub translation_type: String,
+    /// Two-way language A
+    #[serde(default = "default_language_a")]
+    pub language_a: String,
+    /// Two-way language B
+    #[serde(default = "default_language_b")]
+    pub language_b: String,
+    /// Restrict Soniox language detection to configured hints
+    #[serde(default)]
+    pub language_hints_strict: bool,
+    /// Soniox endpoint delay in milliseconds
+    #[serde(default = "default_endpoint_delay")]
+    pub endpoint_delay: u32,
     /// Publish live translation events to my-traslator-chat
     #[serde(default)]
     pub web_chat_enabled: bool,
@@ -106,6 +121,11 @@ impl Default for Settings {
             show_original: true,
             view_mode: default_view_mode(),
             translation_mode: "soniox".to_string(),
+            translation_type: default_translation_type(),
+            language_a: default_language_a(),
+            language_b: default_language_b(),
+            language_hints_strict: false,
+            endpoint_delay: default_endpoint_delay(),
             web_chat_enabled: false,
             web_chat_api_url: String::new(),
             web_chat_api_key: String::new(),
@@ -128,6 +148,22 @@ impl Default for Settings {
 
 fn default_view_mode() -> String {
     "dual".to_string()
+}
+
+fn default_translation_type() -> String {
+    "one_way".to_string()
+}
+
+fn default_language_a() -> String {
+    "ja".to_string()
+}
+
+fn default_language_b() -> String {
+    "vi".to_string()
+}
+
+fn default_endpoint_delay() -> u32 {
+    3000
 }
 
 /// Get the settings file path

@@ -402,7 +402,21 @@ class App {
 
         // Translation type toggle (one-way / two-way)
         document.getElementById('select-translation-type')?.addEventListener('change', (e) => {
-            this._updateTranslationTypeUI(e.target.value);
+            const value = e.target.value;
+            this._updateTranslationTypeUI(value);
+            settingsManager.save({ translation_type: value }).catch((err) => {
+                console.error('Failed to save translation type:', err);
+            });
+        });
+        document.getElementById('select-lang-a')?.addEventListener('change', (e) => {
+            settingsManager.save({ language_a: e.target.value }).catch((err) => {
+                console.error('Failed to save language A:', err);
+            });
+        });
+        document.getElementById('select-lang-b')?.addEventListener('change', (e) => {
+            settingsManager.save({ language_b: e.target.value }).catch((err) => {
+                console.error('Failed to save language B:', err);
+            });
         });
 
         // Soniox link
