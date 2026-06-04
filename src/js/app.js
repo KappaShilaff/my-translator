@@ -13,6 +13,7 @@ import { audioPlayer } from './audio-player.js';
 import { updater } from './updater.js';
 import { sessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
+import { webChatPublisher } from './web-chat.js';
 
 const { invoke } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
@@ -25,6 +26,8 @@ class App {
         this.translationMode = 'soniox'; // 'soniox' | 'local'
         this.transcriptUI = null;
         this.appWindow = getCurrentWindow();
+        this.webChatShareUrl = '';
+        this._webChatWarned = false;
         this.localPipelineChannel = null;
         this.localPipelineReady = false;
         this.recordingStartTime = null;
@@ -417,6 +420,12 @@ class App {
         document.getElementById('btn-save-settings-top')?.addEventListener('click', () => {
             this._saveSettingsFromForm();
         });
+        document.getElementById('btn-web-chat-create')?.addEventListener('click', () => {
+            this._createWebChatRoomFromForm();
+        });
+        document.getElementById('btn-web-chat-copy')?.addEventListener('click', () => {
+            this._copyWebChatShareUrl();
+        });
 
         // Slider live updates
         document.getElementById('range-opacity').addEventListener('input', (e) => {
@@ -513,12 +522,14 @@ class App {
             this.transcriptUI.addTranslation(text);
             const src = this._sonioxOriginalQueue.shift() || '';
             sessionStore.addSegment(src, text);
+            this._publishWebChatFinal({ source: src, translation: text });
             this._speakIfEnabled(text);
         };
 
         sonioxClient.onProvisional = (text, speaker, language) => {
             if (text) {
                 this.transcriptUI.setProvisional(text, speaker, language);
+                this._publishWebChatProvisional({ source: text, speaker, language });
             } else {
                 this.transcriptUI.clearProvisional();
             }
@@ -753,6 +764,15 @@ class App {
         if (googleSpeedSlider) googleSpeedSlider.value = googleSpeed;
         if (googleSpeedLabel) googleSpeedLabel.textContent = googleSpeed + 'x';
 
+        const webChatEnabled = document.getElementById('check-web-chat-enabled');
+        if (webChatEnabled) webChatEnabled.checked = Boolean(s.web_chat_enabled);
+        const webChatUrl = document.getElementById('input-web-chat-api-url');
+        if (webChatUrl) webChatUrl.value = s.web_chat_api_url || '';
+        const webChatKey = document.getElementById('input-web-chat-api-key');
+        if (webChatKey) webChatKey.value = s.web_chat_api_key || '';
+        const webChatShare = document.getElementById('input-web-chat-share-url');
+        if (webChatShare) webChatShare.value = this.webChatShareUrl || '';
+
         // TTS provider
         const providerSelect = document.getElementById('select-tts-provider');
         if (providerSelect) {
@@ -766,6 +786,9 @@ class App {
             soniox_api_key: document.getElementById('input-api-key').value.trim(),
             openai_api_key: document.getElementById('input-openai-key')?.value.trim() || '',
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
+            web_chat_enabled: document.getElementById('check-web-chat-enabled')?.checked || false,
+            web_chat_api_url: document.getElementById('input-web-chat-api-url')?.value.trim() || '',
+            web_chat_api_key: document.getElementById('input-web-chat-api-key')?.value.trim() || '',
             source_language: document.getElementById('select-source-lang').value,
             target_language: document.getElementById('select-target-lang').value,
             translation_mode: document.getElementById('select-translation-mode').value,
@@ -834,6 +857,89 @@ class App {
         } catch (err) {
             this._showToast(`Failed to save: ${err}`, 'error');
         }
+    }
+
+    async _createWebChatRoomFromForm() {
+        const enabled = document.getElementById('check-web-chat-enabled')?.checked || false;
+        const apiUrl = document.getElementById('input-web-chat-api-url')?.value.trim() || '';
+        const apiKey = document.getElementById('input-web-chat-api-key')?.value.trim() || '';
+
+        if (!enabled) {
+            this._showToast('Enable Web Chat first', 'info');
+            return;
+        }
+
+        try {
+            const room = await webChatPublisher.createSession({ enabled, apiUrl, apiKey });
+            this._setWebChatShareUrl(room?.share_url || '');
+            this._showToast('Web Chat room created', 'success');
+        } catch (err) {
+            console.error('[WebChat] create room failed:', err);
+            this._showToast(`Web Chat: ${err.message || err}`, 'error');
+        }
+    }
+
+    async _copyWebChatShareUrl() {
+        const value = document.getElementById('input-web-chat-share-url')?.value || this.webChatShareUrl;
+        if (!value) {
+            this._showToast('No Web Chat link yet', 'info');
+            return;
+        }
+
+        await navigator.clipboard.writeText(value);
+        this._showToast('Web Chat link copied', 'success');
+    }
+
+    _setWebChatShareUrl(url) {
+        this.webChatShareUrl = url || '';
+        const input = document.getElementById('input-web-chat-share-url');
+        if (input) input.value = this.webChatShareUrl;
+    }
+
+    async _startWebChatIfEnabled(settings) {
+        this._webChatWarned = false;
+        this._setWebChatShareUrl('');
+        webChatPublisher.reset();
+
+        if (!settings.web_chat_enabled) return;
+
+        try {
+            const room = await webChatPublisher.createSession({
+                enabled: true,
+                apiUrl: settings.web_chat_api_url,
+                apiKey: settings.web_chat_api_key,
+            });
+            this._setWebChatShareUrl(room?.share_url || '');
+            if (this.webChatShareUrl) {
+                this._showToast(`Web Chat live: ${this.webChatShareUrl}`, 'success');
+            }
+            await webChatPublisher.publishStatus('live');
+        } catch (err) {
+            console.error('[WebChat] start failed:', err);
+            this._showToast(`Web Chat disabled: ${err.message || err}`, 'error');
+            webChatPublisher.reset();
+        }
+    }
+
+    _publishWebChatProvisional(event) {
+        this._publishWebChatSafely(() => webChatPublisher.publishProvisional(event));
+    }
+
+    _publishWebChatFinal(event) {
+        this._publishWebChatSafely(() => webChatPublisher.publishFinal(event));
+    }
+
+    _publishWebChatSafely(run) {
+        run()
+            .then((ok) => {
+                if (!ok && !this._webChatWarned && webChatPublisher.enabled && webChatPublisher.roomId) {
+                    this._webChatWarned = true;
+                    this._showToast('Web Chat publish failed; local translation continues', 'error');
+                }
+            })
+            .catch((err) => {
+                console.error('[WebChat] publish error:', err);
+            });
     }
 
     // ─── Apply Settings ────────────────────────────────────
@@ -1499,6 +1605,8 @@ class App {
             this.transcriptUI.clearProvisional();
         }
 
+        await this._startWebChatIfEnabled(settings);
+
         if (this.translationMode === 'local') {
             await this._startLocalMode(settings);
         } else if (this.translationMode === 'openai') {
@@ -1529,6 +1637,8 @@ class App {
 
         this.openAiOutputQueue = new OpenAiAudioOutputQueue();
         this.openAiClient = new OpenAiRealtimeClient();
+        this._webChatOpenAiProvisionalSource = '';
+        this._webChatOpenAiProvisionalTranslation = '';
 
         this.openAiClient.onStatusChange = (state) => {
             if (state === 'ready') this._updateStatus('connected');
@@ -1536,10 +1646,20 @@ class App {
         };
         this.openAiClient.onProvisional = (text) => {
             this.transcriptUI.setProvisional(text, null, null);
+            this._webChatOpenAiProvisionalTranslation = text || '';
+            this._publishWebChatProvisional({
+                source: this._webChatOpenAiProvisionalSource || '',
+                translation: this._webChatOpenAiProvisionalTranslation,
+            });
         };
         this.openAiClient.onSourceProvisional = (text) => {
             // Source-side provisional: keep dual panel responsive while ASR runs.
             this.transcriptUI.setSourceProvisional?.(text);
+            this._webChatOpenAiProvisionalSource = text || '';
+            this._publishWebChatProvisional({
+                source: this._webChatOpenAiProvisionalSource,
+                translation: this._webChatOpenAiProvisionalTranslation || '',
+            });
         };
         this.openAiClient.onSegment = (sourceText, translatedText) => {
             // Pair source + translation atomically so FIFO matching in addTranslation works.
@@ -1548,6 +1668,9 @@ class App {
             // Atomic write to session store — bypass UI's loose FIFO since
             // OpenAI gives us both texts in one event.
             sessionStore.addSegment(sourceText || '', translatedText || '');
+            this._publishWebChatFinal({ source: sourceText || '', translation: translatedText || '' });
+            this._webChatOpenAiProvisionalSource = '';
+            this._webChatOpenAiProvisionalTranslation = '';
             this.transcriptUI.clearSourceProvisional?.();
             this.transcriptUI.clearProvisional();
         };
@@ -1620,10 +1743,12 @@ class App {
         };
         this.qwenClient.onProvisional = (text) => {
             this.transcriptUI.setProvisional(text, null, null);
+            this._publishWebChatProvisional({ translation: text || '' });
         };
         this.qwenClient.onSegment = (sourceText, translatedText) => {
             this.transcriptUI.addTranslation(translatedText);
             sessionStore.addSegment('', translatedText || '');
+            this._publishWebChatFinal({ translation: translatedText || '' });
             this.transcriptUI.clearProvisional();
         };
         this.qwenClient.onError = (code, msg) => {
@@ -1860,6 +1985,10 @@ class App {
                 // Persist atomically — Local pipeline gives both texts in
                 // one event so we don't need FIFO pairing.
                 sessionStore.addSegment(data.original || '', data.translated || '');
+                this._publishWebChatFinal({
+                    source: data.original || '',
+                    translation: data.translated || '',
+                });
                 break;
             case 'status':
                 const msg = data.message || 'Loading...';
@@ -2036,6 +2165,9 @@ class App {
             // Disconnect Soniox
             sonioxClient.disconnect();
         }
+
+        await webChatPublisher.publishStatus('ended');
+        webChatPublisher.reset();
 
         // Keep transcript visible — don't clear
         this.transcriptUI.clearProvisional();

@@ -1179,6 +1179,11 @@ input[type="password"] {
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
+input[readonly] {
+  color: var(--text-secondary);
+  cursor: default;
+}
+
 input[type="text"]:focus,
 input[type="password"]:focus {
   border-color: var(--border-focus);

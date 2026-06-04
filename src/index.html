@@ -325,6 +325,30 @@
           <p class="hint">Get DashScope key at <a href="#" id="link-qwen">bailian.console.alibabacloud.com</a> · free preview</p>
         </div>
 
+        <div class="settings-section" id="section-web-chat">
+          <label class="checkbox-option">
+            <input type="checkbox" id="check-web-chat-enabled" />
+            <span class="checkbox-label">Web Chat live share</span>
+          </label>
+          <p class="hint">Publish live original + translated text to a public chat viewer.</p>
+          <div class="field" style="margin-top: 8px;">
+            <span class="field-label">API URL</span>
+            <input type="text" id="input-web-chat-api-url" placeholder="https://chat.example.com" autocomplete="off" />
+          </div>
+          <div class="field" style="margin-top: 8px;">
+            <span class="field-label">API Key</span>
+            <input type="password" id="input-web-chat-api-key" placeholder="x-api-key" autocomplete="off" />
+          </div>
+          <div class="field" style="margin-top: 8px;">
+            <span class="field-label">Share Link</span>
+            <div class="input-group">
+              <input type="text" id="input-web-chat-share-url" readonly placeholder="Create a room or Start to generate a link" />
+              <button id="btn-web-chat-create" class="btn-secondary small" title="Create room">Create</button>
+              <button id="btn-web-chat-copy" class="btn-secondary small" title="Copy link">Copy</button>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section" id="section-languages">
           <!-- Translation Type -->
           <div style="margin-bottom: 10px;">

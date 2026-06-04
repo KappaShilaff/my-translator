@@ -48,6 +48,15 @@ pub struct Settings {
     pub view_mode: String,
     /// Translation mode: "soniox" | "local" | "openai"
     pub translation_mode: String,
+    /// Publish live translation events to my-traslator-chat
+    #[serde(default)]
+    pub web_chat_enabled: bool,
+    /// my-traslator-chat API base URL
+    #[serde(default)]
+    pub web_chat_api_url: String,
+    /// my-traslator-chat publish API key
+    #[serde(default)]
+    pub web_chat_api_key: String,
     /// Optional custom context for better transcription
     pub custom_context: Option<CustomContext>,
     /// ElevenLabs API key for TTS narration
@@ -93,6 +102,9 @@ impl Default for Settings {
             show_original: true,
             view_mode: default_view_mode(),
             translation_mode: "soniox".to_string(),
+            web_chat_enabled: false,
+            web_chat_api_url: String::new(),
+            web_chat_api_key: String::new(),
             custom_context: None,
             elevenlabs_api_key: String::new(),
             tts_enabled: false,
