@@ -5,7 +5,7 @@
 
 import { settingsManager } from './settings.js';
 import { TranscriptUI } from './ui.js';
-import { sonioxClient } from './soniox.js';
+import { SonioxClient, sonioxClient } from './soniox.js';
 import { elevenLabsTTS } from './elevenlabs-tts.js';
 import { googleTTS } from './google-tts.js';
 import { edgeTTSRust } from './edge-tts.js';
@@ -29,6 +29,8 @@ class App {
         this.appWindow = getCurrentWindow();
         this.webChatShareUrl = '';
         this._webChatWarned = false;
+        this.webChatSonioxClient = null;
+        this._webChatOriginalQueue = [];
         this.localPipelineChannel = null;
         this.localPipelineReady = false;
         this.recordingStartTime = null;
@@ -540,14 +542,12 @@ class App {
             this.transcriptUI.addTranslation(text);
             const src = this._sonioxOriginalQueue.shift() || '';
             sessionStore.addSegment(src, text);
-            this._publishWebChatFinal({ source: src, translation: text });
             this._speakIfEnabled(text);
         };
 
         sonioxClient.onProvisional = (text, speaker, language) => {
             if (text) {
                 this.transcriptUI.setProvisional(text, speaker, language);
-                this._publishWebChatProvisional({ source: text, speaker, language });
             } else {
                 this.transcriptUI.clearProvisional();
             }
@@ -933,7 +933,7 @@ class App {
             if (this.webChatShareUrl) {
                 this._showToast(`Web Chat live: ${this.webChatShareUrl}`, 'success');
             }
-            await webChatPublisher.publishStatus('live');
+            await this._startWebChatMicOnlyTranslation(settings);
         } catch (err) {
             console.error('[WebChat] start failed:', err);
             this._showToast(`Web Chat disabled: ${err.message || err}`, 'error');
@@ -960,6 +960,68 @@ class App {
             .catch((err) => {
                 console.error('[WebChat] publish error:', err);
             });
+    }
+
+    async _startWebChatMicOnlyTranslation(settings) {
+        if (!settings.soniox_api_key) {
+            throw new Error('Soniox API key is required for mic-only Web Chat');
+        }
+
+        await this._stopWebChatMicOnlyTranslation();
+
+        this._webChatOriginalQueue = [];
+        this.webChatSonioxClient = new SonioxClient();
+        this.webChatSonioxClient.onOriginal = (text) => {
+            this._webChatOriginalQueue.push(text);
+        };
+        this.webChatSonioxClient.onTranslation = (text) => {
+            const source = this._webChatOriginalQueue.shift() || '';
+            this._publishWebChatFinal({ source, translation: text });
+        };
+        this.webChatSonioxClient.onProvisional = (text, speaker, language) => {
+            if (text) {
+                this._publishWebChatProvisional({ source: text, speaker, language });
+            }
+        };
+        this.webChatSonioxClient.onError = (error) => {
+            console.error('[WebChat Soniox]', error);
+        };
+
+        this.webChatSonioxClient.connect({
+            apiKey: settings.soniox_api_key,
+            sourceLanguage: settings.source_language,
+            targetLanguage: settings.target_language,
+            customContext: settings.custom_context,
+            translationType: settings.translation_type || 'one_way',
+            languageA: settings.language_a,
+            languageB: settings.language_b,
+            languageHintsStrict: settings.language_hints_strict || false,
+            endpointDelay: settings.endpoint_delay || 3000,
+        });
+
+        const channel = new window.__TAURI__.core.Channel();
+        channel.onmessage = (pcmData) => {
+            const bytes = new Uint8Array(pcmData);
+            this.webChatSonioxClient?.sendAudio(bytes.buffer);
+        };
+
+        await invoke('start_web_chat_mic_capture', { channel });
+        await webChatPublisher.publishStatus('live');
+    }
+
+    async _stopWebChatMicOnlyTranslation() {
+        try {
+            await invoke('stop_web_chat_mic_capture');
+        } catch (err) {
+            console.error('[WebChat] stop mic capture failed:', err);
+        }
+
+        if (this.webChatSonioxClient) {
+            try { this.webChatSonioxClient.disconnect(); } catch {}
+            this.webChatSonioxClient = null;
+        }
+
+        this._webChatOriginalQueue = [];
     }
 
     // ─── Apply Settings ────────────────────────────────────
@@ -1698,19 +1760,11 @@ class App {
         this.openAiClient.onProvisional = (text) => {
             this.transcriptUI.setProvisional(text, null, null);
             this._webChatOpenAiProvisionalTranslation = text || '';
-            this._publishWebChatProvisional({
-                source: this._webChatOpenAiProvisionalSource || '',
-                translation: this._webChatOpenAiProvisionalTranslation,
-            });
         };
         this.openAiClient.onSourceProvisional = (text) => {
             // Source-side provisional: keep dual panel responsive while ASR runs.
             this.transcriptUI.setSourceProvisional?.(text);
             this._webChatOpenAiProvisionalSource = text || '';
-            this._publishWebChatProvisional({
-                source: this._webChatOpenAiProvisionalSource,
-                translation: this._webChatOpenAiProvisionalTranslation || '',
-            });
         };
         this.openAiClient.onSegment = (sourceText, translatedText) => {
             // Pair source + translation atomically so FIFO matching in addTranslation works.
@@ -1719,7 +1773,6 @@ class App {
             // Atomic write to session store — bypass UI's loose FIFO since
             // OpenAI gives us both texts in one event.
             sessionStore.addSegment(sourceText || '', translatedText || '');
-            this._publishWebChatFinal({ source: sourceText || '', translation: translatedText || '' });
             this._webChatOpenAiProvisionalSource = '';
             this._webChatOpenAiProvisionalTranslation = '';
             this.transcriptUI.clearSourceProvisional?.();
@@ -1795,12 +1848,10 @@ class App {
         };
         this.qwenClient.onProvisional = (text) => {
             this.transcriptUI.setProvisional(text, null, null);
-            this._publishWebChatProvisional({ translation: text || '' });
         };
         this.qwenClient.onSegment = (sourceText, translatedText) => {
             this.transcriptUI.addTranslation(translatedText);
             sessionStore.addSegment('', translatedText || '');
-            this._publishWebChatFinal({ translation: translatedText || '' });
             this.transcriptUI.clearProvisional();
         };
         this.qwenClient.onError = (code, msg) => {
@@ -2039,10 +2090,6 @@ class App {
                 // Persist atomically — Local pipeline gives both texts in
                 // one event so we don't need FIFO pairing.
                 sessionStore.addSegment(data.original || '', data.translated || '');
-                this._publishWebChatFinal({
-                    source: data.original || '',
-                    translation: data.translated || '',
-                });
                 break;
             case 'status':
                 const msg = data.message || 'Loading...';
@@ -2221,6 +2268,7 @@ class App {
         }
 
         await webChatPublisher.publishStatus('ended');
+        await this._stopWebChatMicOnlyTranslation();
         webChatPublisher.reset();
 
         // Keep transcript visible — don't clear

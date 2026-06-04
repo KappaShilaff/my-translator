@@ -39,6 +39,8 @@ pub fn run() {
             system_audio: Mutex::new(SystemAudioCapture::new()),
             microphone: Mutex::new(MicCapture::new()),
             active_receiver: Mutex::new(None),
+            web_chat_microphone: Mutex::new(MicCapture::new()),
+            web_chat_receiver: Mutex::new(None),
         })
         .manage(LocalPipelineState {
             process: Mutex::new(None),
@@ -50,6 +52,8 @@ pub fn run() {
             commands::settings::save_settings,
             commands::audio::start_capture,
             commands::audio::stop_capture,
+            commands::audio::start_web_chat_mic_capture,
+            commands::audio::stop_web_chat_mic_capture,
             commands::audio::check_permissions,
             commands::transcript::save_transcript,
             commands::transcript::open_transcript_dir,

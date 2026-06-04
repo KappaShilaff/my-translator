@@ -17,6 +17,8 @@ pub struct AudioState {
     pub system_audio: Mutex<SystemAudioCapture>,
     pub microphone: Mutex<MicCapture>,
     pub active_receiver: Mutex<Option<AudioForwarder>>,
+    pub web_chat_microphone: Mutex<MicCapture>,
+    pub web_chat_receiver: Mutex<Option<AudioForwarder>>,
 }
 
 /// Forwards audio from a receiver to a Tauri IPC channel
@@ -74,18 +76,57 @@ pub fn start_capture(
         _ => return Err(format!("Unknown source: {}", source)),
     };
 
-    // Spawn a thread to forward audio data from receiver to IPC channel
+    let forwarder = forward_audio(receiver, channel);
+    let mut active = state.active_receiver.lock().map_err(|e| e.to_string())?;
+    *active = Some(forwarder);
+
+    Ok(())
+}
+
+/// Start a separate microphone-only capture for Web Chat publishing.
+#[tauri::command]
+pub fn start_web_chat_mic_capture(
+    channel: Channel<Vec<u8>>,
+    state: State<'_, AudioState>,
+) -> Result<(), String> {
+    stop_web_chat_mic_capture_inner(&state);
+
+    let receiver = {
+        let mut mic = state
+            .web_chat_microphone
+            .lock()
+            .map_err(|e| e.to_string())?;
+        mic.start()?
+    };
+
+    let forwarder = forward_audio(receiver, channel);
+    let mut active = state
+        .web_chat_receiver
+        .lock()
+        .map_err(|e| e.to_string())?;
+    *active = Some(forwarder);
+
+    Ok(())
+}
+
+/// Stop Web Chat microphone-only capture.
+#[tauri::command]
+pub fn stop_web_chat_mic_capture(state: State<'_, AudioState>) -> Result<(), String> {
+    stop_web_chat_mic_capture_inner(&state);
+    Ok(())
+}
+
+fn forward_audio(receiver: mpsc::Receiver<Vec<u8>>, channel: Channel<Vec<u8>>) -> AudioForwarder {
     let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let stop_flag_clone = stop_flag.clone();
 
     std::thread::spawn(move || {
-        let mut buffer: Vec<u8> = Vec::with_capacity(32000); // ~1 sec at 16kHz s16le
+        let mut buffer: Vec<u8> = Vec::with_capacity(32000);
         let batch_interval = std::time::Duration::from_millis(200);
         let mut last_flush = std::time::Instant::now();
 
         loop {
             if stop_flag_clone.load(std::sync::atomic::Ordering::SeqCst) {
-                // Flush remaining buffer before exit
                 if !buffer.is_empty() {
                     let _ = channel.send(buffer.clone());
                 }
@@ -105,10 +146,9 @@ pub fn start_capture(
                 }
             }
 
-            // Flush buffer every 200ms
             if last_flush.elapsed() >= batch_interval && !buffer.is_empty() {
-                if let Err(_e) = channel.send(buffer.clone()) {
-                    break; // Channel closed
+                if channel.send(buffer.clone()).is_err() {
+                    break;
                 }
                 buffer.clear();
                 last_flush = std::time::Instant::now();
@@ -116,12 +156,7 @@ pub fn start_capture(
         }
     });
 
-    // Store the forwarder so we can stop it later
-    let forwarder = AudioForwarder { stop_flag };
-    let mut active = state.active_receiver.lock().map_err(|e| e.to_string())?;
-    *active = Some(forwarder);
-
-    Ok(())
+    AudioForwarder { stop_flag }
 }
 
 struct MixInput {
@@ -285,6 +320,18 @@ fn stop_capture_inner(state: &AudioState) {
 
     // Stop microphone
     if let Ok(mut mic) = state.microphone.lock() {
+        mic.stop();
+    }
+}
+
+fn stop_web_chat_mic_capture_inner(state: &AudioState) {
+    if let Ok(mut active) = state.web_chat_receiver.lock() {
+        if let Some(forwarder) = active.take() {
+            forwarder.stop();
+        }
+    }
+
+    if let Ok(mut mic) = state.web_chat_microphone.lock() {
         mic.stop();
     }
 }
